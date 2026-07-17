@@ -1,0 +1,10 @@
+{
+  "name": "cache",
+  "version": "0.1.0",
+  "entrypoint": "main.ecko",
+  "description": "A general-purpose cache written in Ecko: in-memory LRU with TTL over an optional disk store. get/set/remember(key, ttl, fn).",
+  "author": "Sean Nieuwoudt <sean@underwulf.com>",
+  "license": "MIT",
+  "capabilities": ["fs:read", "fs:write"],
+  "dependencies": {}
+}

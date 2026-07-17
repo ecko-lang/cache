@@ -1,0 +1,117 @@
+# Behavioural tests for the cache package - run offline via `ecko test`.
+# Each case uses a fresh temp dir so runs are independent and repeatable.
+import std.test
+import std.fs
+import std.json
+import "../main.ecko"
+cache = main
+
+# A clean temp directory per case (removed first so reruns start empty).
+fn fresh(name) {
+    dir = fs.join("/tmp/ecko_cache_tests", name)
+    if fs.exists(dir) { fs.remove(dir) }
+    dir
+}
+
+test.case("set then get returns the value; has and delete behave", || {
+    c = cache.open(fresh("roundtrip"))
+    cache.set(c, "greeting", "hello")
+    test.eq(cache.get(c, "greeting"), "hello")
+    test.ok(cache.has(c, "greeting"), "has is true after set")
+    test.eq(cache.get(c, "missing"), null)
+    test.ok(not cache.has(c, "missing"), "has is false for an absent key")
+    cache.delete(c, "greeting")
+    test.eq(cache.get(c, "greeting"), null)
+    test.ok(not cache.has(c, "greeting"), "has is false after delete")
+})
+
+test.case("set/get preserves JSON value types", || {
+    c = cache.open(fresh("types"))
+    cache.set(c, "n", 42)
+    cache.set(c, "f", 3.5)
+    cache.set(c, "list", [1, 2, 3])
+    cache.set(c, "map", { a: 1, b: 2 })
+    test.eq(cache.get(c, "n"), 42)
+    test.eq(cache.get(c, "f"), 3.5)
+    test.eq(cache.get(c, "list"), [1, 2, 3])
+    test.eq(cache.get(c, "map"), { a: 1, b: 2 })
+})
+
+test.case("a value set on one handle is read by a fresh handle (disk persistence)", || {
+    dir = fresh("persist")
+    c1 = cache.open(dir)
+    cache.set(c1, "board", { items: 3 })
+    # a second handle has an empty memory tier, so this must hit disk
+    c2 = cache.open(dir)
+    test.eq(cache.get(c2, "board"), { items: 3 })
+})
+
+test.case("an expired disk entry reads as a miss", || {
+    dir = fresh("ttl")
+    c = cache.open(dir)
+    cache.set(c, "k", "v", 3600)
+    # Rewrite the on-disk entry so it expired in the past. Find it via list_dir
+    # rather than recomputing the hash; the {expires, value} shape is stable.
+    for name in fs.list_dir(dir) {
+        p = fs.join(dir, name)
+        entry = json.decode(fs.read(p))
+        fs.write(p, json.encode({ expires: 1, value: entry.value }))
+    }
+    # fresh handle -> empty memory tier -> forced to read (expired) disk entry
+    c2 = cache.open(dir)
+    test.eq(cache.get(c2, "k"), null)
+    test.ok(not cache.has(c2, "k"), "expired key is absent")
+})
+
+test.case("ttl 0 never expires", || {
+    dir = fresh("forever")
+    c = cache.open(dir)
+    cache.set(c, "k", "v", 0)
+    c2 = cache.open(dir)
+    test.eq(cache.get(c2, "k"), "v")
+})
+
+test.case("memory tier evicts least-recently-used past max; disk still serves it", || {
+    c = cache.open(fresh("lru"), { max: 2 })
+    cache.set(c, "a", 1)
+    cache.set(c, "b", 2)
+    cache.set(c, "c", 3)
+    # only 2 entries remain in the memory tier (a was evicted)
+    test.eq(len(cell_get(c.mem).order), 2)
+    test.ok(not contains(cell_get(c.mem).order, "a"), "a evicted from memory")
+    # but a is still on disk, so get transparently reloads it
+    test.eq(cache.get(c, "a"), 1)
+})
+
+test.case("remember runs the producer once, then serves the cached value", || {
+    c = cache.open(fresh("remember"))
+    calls = cell(0)
+    produce = || {
+        cell_update(calls, |n| n + 1)
+        "computed"
+    }
+    v1 = cache.remember(c, "k", 60, produce)
+    v2 = cache.remember(c, "k", 60, produce)
+    test.eq(v1, "computed")
+    test.eq(v2, "computed")
+    test.eq(cell_get(calls), 1)
+})
+
+test.case("clear empties the cache but leaves unrelated files", || {
+    dir = fresh("clear")
+    c = cache.open(dir)
+    cache.set(c, "a", 1)
+    cache.set(c, "b", 2)
+    fs.write(fs.join(dir, "keep.txt"), "keep me")
+    cache.clear(c)
+    test.eq(cache.get(c, "a"), null)
+    test.eq(cache.get(c, "b"), null)
+    test.ok(fs.exists(fs.join(dir, "keep.txt")), "an unrelated file survives clear")
+})
+
+test.case("memory-only cache (empty dir) works without touching disk", || {
+    c = cache.open("")
+    cache.set(c, "k", "v")
+    test.eq(cache.get(c, "k"), "v")
+    test.eq(cache.get(c, "missing"), null)
+})

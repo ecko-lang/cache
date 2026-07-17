@@ -1,0 +1,65 @@
+# store - the cache's disk tier.
+#
+# An entry is one JSON file named by the sha256 of its key, holding
+# `{ "expires": <ms, 0 = never>, "value": <any JSON> }`. Writes are atomic
+# (write to `<name>.tmp`, then rename over the target) so a concurrent reader
+# never sees a half-written file. Reads tolerate a missing or corrupt file by
+# treating it as a miss - a damaged entry must never crash the caller.
+#
+# These functions are exported so the sibling `cache.ecko` can call them; they
+# are NOT re-exported from `main.ecko`, so they stay off the package's public
+# surface.
+
+import std.fs
+import std.hash
+import std.json
+
+# Ensure the cache directory exists (create_dir_all; no error if present).
+export fn ensure_dir(dir) {
+    fs.mkdir(dir)
+    null
+}
+
+# The on-disk path for a key: <dir>/<sha256(key)>.json
+export fn key_path(dir, key) = fs.join(dir, hash.sha256(key) + ".json")
+
+# read_entry -> { value, expires } or null (missing / unreadable / corrupt).
+export fn read_entry(dir, key) {
+    p = key_path(dir, key)
+    if not fs.exists(p) { null } else {
+        try {
+            doc = json.decode(fs.read(p))
+            { value: doc.value, expires: doc.expires }
+        } catch (e) { null }
+    }
+}
+
+# write_entry - atomic: tmp file then rename over the target.
+export fn write_entry(dir, key, value, expires) {
+    p = key_path(dir, key)
+    tmp = p + ".tmp"
+    fs.write(tmp, json.encode({ expires: expires, value: value }))
+    fs.rename(tmp, p)
+    null
+}
+
+export fn delete_entry(dir, key) {
+    p = key_path(dir, key)
+    if fs.exists(p) { fs.remove(p) }
+    null
+}
+
+# A cache entry file is exactly the 64-hex sha256 plus ".json" (69 chars).
+# Matching on that shape means clear() never removes an unrelated file that
+# happens to share the cache directory.
+fn is_entry_file(name) = ends_with(name, ".json") and len(name) == 69
+
+# clear_dir - remove only this cache's entry files, leaving everything else.
+export fn clear_dir(dir) {
+    if fs.exists(dir) {
+        for name in fs.list_dir(dir) {
+            if is_entry_file(name) { fs.remove(fs.join(dir, name)) }
+        }
+    }
+    null
+}

@@ -1,0 +1,144 @@
+# cache - a general-purpose cache: an in-memory LRU with TTL in front of an
+# optional disk store.
+#
+#   import cache
+#
+#   c = cache.open(".ecko-cache", { max: 1000 })
+#   board = cache.remember(c, "board", 300, || http.get(url).body)
+#
+# A handle is a plain map `{ dir, max, mem }`. `mem` is a `cell` holding the
+# in-memory tier, so passing the handle into `pmap`/spawned tasks shares one
+# tier safely. With `dir` empty the cache is memory-only; with a path it is
+# disk-backed and survives across process runs (see store.ecko).
+
+import std.time
+import "./store.ecko"
+
+# ---- the in-memory tier ----------------------------------------------------
+# State is `{ entries: { key -> {value, expires} }, order: [key, ...] }` where
+# `order` tracks recency, least-recent first. All updates rebuild the state
+# (values are immutable) and go through `cell_update`.
+
+fn empty_mem() = { entries: empty_map(), order: [] }
+
+# NB: this package exports `get`, which shadows the builtin `get` inside this
+# module. Where we need the builtin map accessor, we reach it via `core.get`.
+fn mem_get(state, key) = core.get(state.entries, key)
+
+# Insert/refresh a key as most-recent, then evict the least-recent while over
+# capacity. Eviction touches memory only - the entry stays on disk.
+fn mem_put(state, key, entry, max) {
+    mut entries = insert(state.entries, key, entry)
+    mut order = push(filter(state.order, |k| k != key), key)
+    while len(order) > max {
+        victim = order[0]
+        entries = remove(entries, victim)
+        order = remove(order, 0)
+    }
+    { entries: entries, order: order }
+}
+
+# Move an existing key to most-recent (called on a memory hit).
+fn mem_touch(state, key) = {
+    entries: state.entries,
+    order: push(filter(state.order, |k| k != key), key),
+}
+
+fn mem_del(state, key) = {
+    entries: remove(state.entries, key),
+    order: filter(state.order, |k| k != key),
+}
+
+# ---- expiry ----------------------------------------------------------------
+# expires is absolute Unix ms; 0 means never. time.now() is Unix ms.
+fn expired(entry) = entry.expires != 0 and time.now() >= entry.expires
+
+# ---- public API ------------------------------------------------------------
+
+# open(dir, opts?) -> handle. dir "" or null => memory-only; a path => disk.
+# opts: { max: <memory LRU capacity, default 1000> }.
+export fn open(dir, opts = empty_map()) {
+    max = core.get(opts, "max")
+    m = if max == null { 1000 } else { max }
+    disk = dir != null and dir != ""
+    d = if disk { dir } else { "" }
+    if disk { store.ensure_dir(dir) }
+    { dir: d, max: m, mem: cell(empty_mem()) }
+}
+
+# set(c, key, value, ttl?) -> value. ttl is seconds; 0 (default) never expires.
+export fn set(c, key, value, ttl = 0) {
+    k = string(key)
+    exp = if ttl == 0 { 0 } else { time.now() + ttl * 1000 }
+    entry = { value: value, expires: exp }
+    cell_update(c.mem, |s| mem_put(s, k, entry, c.max))
+    if c.dir != "" { store.write_entry(c.dir, k, value, exp) }
+    value
+}
+
+# get(c, key) -> value or null. Checks memory, then disk; expired entries are
+# dropped and read as a miss.
+export fn get(c, key) {
+    k = string(key)
+    hit = mem_get(cell_get(c.mem), k)
+    if hit != null {
+        if expired(hit) {
+            delete(c, k)
+            return null
+        }
+        cell_update(c.mem, |s| mem_touch(s, k))
+        return hit.value
+    }
+    if c.dir != "" {
+        entry = store.read_entry(c.dir, k)
+        if entry != null {
+            if expired(entry) {
+                store.delete_entry(c.dir, k)
+                return null
+            }
+            cell_update(c.mem, |s| mem_put(s, k, entry, c.max))
+            return entry.value
+        }
+    }
+    null
+}
+
+# has(c, key) -> Bool. A non-mutating predicate: it does not bump recency or
+# populate the memory tier from disk (unlike get).
+export fn has(c, key) {
+    k = string(key)
+    hit = mem_get(cell_get(c.mem), k)
+    if hit != null { return not expired(hit) }
+    if c.dir != "" {
+        entry = store.read_entry(c.dir, k)
+        if entry != null { return not expired(entry) }
+    }
+    false
+}
+
+# remember(c, key, ttl, fn) -> value. Returns the cached value on a hit,
+# otherwise runs fn once, caches its result with ttl, and returns it. A cached
+# null is treated as a miss - use set/get if you need to cache null.
+export fn remember(c, key, ttl, producer) {
+    hit = get(c, key)
+    if hit != null { hit } else {
+        v = producer()
+        set(c, key, v, ttl)
+        v
+    }
+}
+
+# delete(c, key) - remove from memory and disk.
+export fn delete(c, key) {
+    k = string(key)
+    cell_update(c.mem, |s| mem_del(s, k))
+    if c.dir != "" { store.delete_entry(c.dir, k) }
+    null
+}
+
+# clear(c) - empty the memory tier and remove only this cache's disk files.
+export fn clear(c) {
+    cell_set(c.mem, empty_mem())
+    if c.dir != "" { store.clear_dir(c.dir) }
+    null
+}

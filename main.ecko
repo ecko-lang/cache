@@ -1,0 +1,19 @@
+# cache - a general-purpose cache written in Ecko.
+#
+# An in-memory LRU with TTL in front of an optional disk store. No native code:
+# it composes std.fs, std.time, std.hash and std.json over a `cell`.
+#
+#   import cache
+#
+#   c = cache.open(".ecko-cache")
+#   # memoize an expensive fetch for 5 minutes, across process runs
+#   board = cache.remember(c, "board", 300, || http.get(url).body)
+#
+#   cache.set(c, "k", value, 60)   # ttl seconds; 0 = never expires
+#   cache.get(c, "k")              # value or null
+#   cache.has(c, "k")              # Bool (non-mutating)
+#   cache.delete(c, "k")
+#   cache.clear(c)
+#
+# This entrypoint curates the public surface; store.ecko stays internal.
+export * from "./cache.ecko"

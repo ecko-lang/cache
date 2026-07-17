@@ -1,0 +1,30 @@
+# A memoize-across-runs demo. Run it TWICE from this directory:
+#
+#   ecko example.ecko    # first run:  "computing..." then the result
+#   ecko example.ecko    # second run: served from disk, no "computing..."
+#
+# (Not part of `ecko test`, which is offline and ephemeral - this writes to
+# ./.ecko-cache and deliberately persists between runs. Delete that directory
+# to reset.)
+
+import "./main.ecko"
+
+c = main.open(".ecko-cache")
+
+# An "expensive" value we would rather not recompute on every run. In real code
+# this is an http.get, a database query, or an LLM call.
+expensive = || {
+    print("computing... (expensive work happening)")
+    total = reduce(1..=1000000, |a, x| a + x, 0)
+    { total: total, note: "cached for one hour" }
+}
+
+# remember: run `expensive` on the first invocation, then serve the value from
+# disk for the next hour - across separate `ecko` runs.
+result = main.remember(c, "big-sum", 3600, expensive)
+print("result: {result.total} ({result.note})")
+# The card's real use-case has the same shape (add the `net` capability):
+# 
+# import std.http
+# import std.json
+# board = main.remember(c, "board", 300, || json.decode(http.get(url).body))
