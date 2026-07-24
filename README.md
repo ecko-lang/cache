@@ -1,4 +1,4 @@
-# cache
+# Cache - Ecko Std Lib Package
 
 A general-purpose cache for [Ecko](https://ecko.sh), written in Ecko. An
 in-memory LRU with TTL sitting in front of an optional disk store - so a value
@@ -100,4 +100,4 @@ memoize-across-runs demo.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT - see [LICENSE](LICENSE).
