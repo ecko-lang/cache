@@ -29,7 +29,7 @@ fn mem_get(state, key) = core.get(state.entries, key)
 # capacity. Eviction touches memory only - the entry stays on disk.
 fn mem_put(state, key, entry, max) {
     mut entries = insert(state.entries, key, entry)
-    mut order = push(filter(state.order, |k| k != key), key)
+    mut order = push(filter(state.order, fn(k) k != key), key)
     while len(order) > max {
         victim = order[0]
         entries = remove(entries, victim)
@@ -41,12 +41,12 @@ fn mem_put(state, key, entry, max) {
 # Move an existing key to most-recent (called on a memory hit).
 fn mem_touch(state, key) = {
     entries: state.entries,
-    order: push(filter(state.order, |k| k != key), key),
+    order: push(filter(state.order, fn(k) k != key), key),
 }
 
 fn mem_del(state, key) = {
     entries: remove(state.entries, key),
-    order: filter(state.order, |k| k != key),
+    order: filter(state.order, fn(k) k != key),
 }
 
 # ---- expiry ----------------------------------------------------------------
@@ -71,7 +71,7 @@ export fn set(c, key, value, ttl = 0) {
     k = string(key)
     exp = if ttl == 0 { 0 } else { time.now() + ttl * 1000 }
     entry = { value: value, expires: exp }
-    cell_update(c.mem, |s| mem_put(s, k, entry, c.max))
+    cell_update(c.mem, fn(s) mem_put(s, k, entry, c.max))
     if c.dir != "" { store.write_entry(c.dir, k, value, exp) }
     value
 }
@@ -86,7 +86,7 @@ export fn get(c, key) {
             delete(c, k)
             return null
         }
-        cell_update(c.mem, |s| mem_touch(s, k))
+        cell_update(c.mem, fn(s) mem_touch(s, k))
         return hit.value
     }
     if c.dir != "" {
@@ -96,7 +96,7 @@ export fn get(c, key) {
                 store.delete_entry(c.dir, k)
                 return null
             }
-            cell_update(c.mem, |s| mem_put(s, k, entry, c.max))
+            cell_update(c.mem, fn(s) mem_put(s, k, entry, c.max))
             return entry.value
         }
     }
@@ -131,7 +131,7 @@ export fn remember(c, key, ttl, producer) {
 # delete(c, key) - remove from memory and disk.
 export fn delete(c, key) {
     k = string(key)
-    cell_update(c.mem, |s| mem_del(s, k))
+    cell_update(c.mem, fn(s) mem_del(s, k))
     if c.dir != "" { store.delete_entry(c.dir, k) }
     null
 }

@@ -11,17 +11,19 @@ over a `cell`. This is the general cache; the `ai` prompt cache
 ## Install
 
 ```bash
-ecko add https://github.com/ecko-sh/cache
+ecko get github.com/ecko-sh/cache
 ```
 
-`ecko add` vendors the package into `./vendor/cache/` and pins it by SHA-256 in
-`ecko.lock`. Grant it filesystem access for the disk tier in your `ecko.json`:
+`ecko get` vendors the package under `./vendor/github.com/ecko-sh/cache/` and
+pins a file-tree hash in `ecko.sum`. Grant it filesystem access for the disk
+tier in your `ecko.json`:
 
 ```json
 {
   "dependencies": {
     "cache": {
-      "source": "https://github.com/ecko-sh/cache",
+      "path": "github.com/ecko-sh/cache",
+      "version": "v0.1.0",
       "grant": ["fs:read", "fs:write"]
     }
   }

@@ -13,9 +13,9 @@ c = main.open(".ecko-cache")
 
 # An "expensive" value we would rather not recompute on every run. In real code
 # this is an http.get, a database query, or an LLM call.
-expensive = || {
+expensive = fn() {
     print("computing... (expensive work happening)")
-    total = reduce(1..=1000000, |a, x| a + x, 0)
+    total = reduce(1..=1000000, fn(a, x) a + x, 0)
     { total: total, note: "cached for one hour" }
 }
 

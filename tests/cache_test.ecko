@@ -13,7 +13,7 @@ fn fresh(name) {
     dir
 }
 
-test.case("set then get returns the value; has and delete behave", || {
+test.case("set then get returns the value; has and delete behave", fn() {
     c = cache.open(fresh("roundtrip"))
     cache.set(c, "greeting", "hello")
     test.eq(cache.get(c, "greeting"), "hello")
@@ -25,7 +25,7 @@ test.case("set then get returns the value; has and delete behave", || {
     test.ok(not cache.has(c, "greeting"), "has is false after delete")
 })
 
-test.case("set/get preserves JSON value types", || {
+test.case("set/get preserves JSON value types", fn() {
     c = cache.open(fresh("types"))
     cache.set(c, "n", 42)
     cache.set(c, "f", 3.5)
@@ -37,7 +37,7 @@ test.case("set/get preserves JSON value types", || {
     test.eq(cache.get(c, "map"), { a: 1, b: 2 })
 })
 
-test.case("a value set on one handle is read by a fresh handle (disk persistence)", || {
+test.case("a value set on one handle is read by a fresh handle (disk persistence)", fn() {
     dir = fresh("persist")
     c1 = cache.open(dir)
     cache.set(c1, "board", { items: 3 })
@@ -46,7 +46,7 @@ test.case("a value set on one handle is read by a fresh handle (disk persistence
     test.eq(cache.get(c2, "board"), { items: 3 })
 })
 
-test.case("an expired disk entry reads as a miss", || {
+test.case("an expired disk entry reads as a miss", fn() {
     dir = fresh("ttl")
     c = cache.open(dir)
     cache.set(c, "k", "v", 3600)
@@ -63,7 +63,7 @@ test.case("an expired disk entry reads as a miss", || {
     test.ok(not cache.has(c2, "k"), "expired key is absent")
 })
 
-test.case("ttl 0 never expires", || {
+test.case("ttl 0 never expires", fn() {
     dir = fresh("forever")
     c = cache.open(dir)
     cache.set(c, "k", "v", 0)
@@ -71,7 +71,7 @@ test.case("ttl 0 never expires", || {
     test.eq(cache.get(c2, "k"), "v")
 })
 
-test.case("memory tier evicts least-recently-used past max; disk still serves it", || {
+test.case("memory tier evicts least-recently-used past max; disk still serves it", fn() {
     c = cache.open(fresh("lru"), { max: 2 })
     cache.set(c, "a", 1)
     cache.set(c, "b", 2)
@@ -83,11 +83,11 @@ test.case("memory tier evicts least-recently-used past max; disk still serves it
     test.eq(cache.get(c, "a"), 1)
 })
 
-test.case("remember runs the producer once, then serves the cached value", || {
+test.case("remember runs the producer once, then serves the cached value", fn() {
     c = cache.open(fresh("remember"))
     calls = cell(0)
-    produce = || {
-        cell_update(calls, |n| n + 1)
+    produce = fn() {
+        cell_update(calls, fn(n) n + 1)
         "computed"
     }
     v1 = cache.remember(c, "k", 60, produce)
@@ -97,7 +97,7 @@ test.case("remember runs the producer once, then serves the cached value", || {
     test.eq(cell_get(calls), 1)
 })
 
-test.case("clear empties the cache but leaves unrelated files", || {
+test.case("clear empties the cache but leaves unrelated files", fn() {
     dir = fresh("clear")
     c = cache.open(dir)
     cache.set(c, "a", 1)
@@ -109,7 +109,7 @@ test.case("clear empties the cache but leaves unrelated files", || {
     test.ok(fs.exists(fs.join(dir, "keep.txt")), "an unrelated file survives clear")
 })
 
-test.case("memory-only cache (empty dir) works without touching disk", || {
+test.case("memory-only cache (empty dir) works without touching disk", fn() {
     c = cache.open("")
     cache.set(c, "k", "v")
     test.eq(cache.get(c, "k"), "v")
