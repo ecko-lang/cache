@@ -23,7 +23,7 @@ tier in your `ecko.json`:
   "dependencies": {
     "cache": {
       "path": "github.com/ecko-sh/cache",
-      "version": "v0.1.0",
+      "version": "v0.9.1",
       "grant": ["fs:read", "fs:write"]
     }
   }
