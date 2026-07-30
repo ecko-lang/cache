@@ -55,8 +55,16 @@ fn expired(entry) = entry.expires != 0 and time.now() >= entry.expires
 
 # ---- public API ------------------------------------------------------------
 
-# open(dir, opts?) -> handle. dir "" or null => memory-only; a path => disk.
-# opts: { max: <memory LRU capacity, default 1000> }.
+## open(dir, opts?) -> a cache handle.
+##
+## `dir` empty or null makes the cache memory-only; a path makes it disk-backed,
+## so entries survive across process runs. `opts.max` caps the in-memory tier
+## (default 1000) and eviction is least-recently-used - an evicted entry is gone
+## from memory but still on disk.
+##
+## example:
+##   c = cache.open(".ecko-cache", { max: 500 })
+##   mem = cache.open("")               # memory-only
 export fn open(dir, opts = empty_map()) {
     max = core.get(opts, "max")
     m = if max == null { 1000 } else { max }
@@ -66,7 +74,12 @@ export fn open(dir, opts = empty_map()) {
     { dir: d, max: m, mem: cell(empty_mem()) }
 }
 
-# set(c, key, value, ttl?) -> value. ttl is seconds; 0 (default) never expires.
+## set(c, key, value, ttl?) -> the value, so it can be used inline.
+##
+## `ttl` is in seconds; 0 (the default) never expires. Writes both tiers.
+##
+## example:
+##   cache.set(c, "board", data, 300)   # five minutes
 export fn set(c, key, value, ttl = 0) {
     k = string(key)
     exp = if ttl == 0 { 0 } else { time.now() + ttl * 1000 }
@@ -76,8 +89,10 @@ export fn set(c, key, value, ttl = 0) {
     value
 }
 
-# get(c, key) -> value or null. Checks memory, then disk; expired entries are
-# dropped and read as a miss.
+## get(c, key) -> the value, or null when there is nothing live for `key`.
+##
+## Memory first, then disk. An expired entry is deleted and reads as a miss, and
+## a disk hit is promoted back into memory. A hit bumps recency.
 export fn get(c, key) {
     k = string(key)
     hit = mem_get(cell_get(c.mem), k)
@@ -103,8 +118,10 @@ export fn get(c, key) {
     null
 }
 
-# has(c, key) -> Bool. A non-mutating predicate: it does not bump recency or
-# populate the memory tier from disk (unlike get).
+## has(c, key) -> whether a live entry exists for `key`.
+##
+## Non-mutating, which is the difference from `get`: it neither bumps recency
+## nor promotes a disk entry into memory, so probing cannot evict anything.
 export fn has(c, key) {
     k = string(key)
     hit = mem_get(cell_get(c.mem), k)
@@ -116,9 +133,16 @@ export fn has(c, key) {
     false
 }
 
-# remember(c, key, ttl, fn) -> value. Returns the cached value on a hit,
-# otherwise runs fn once, caches its result with ttl, and returns it. A cached
-# null is treated as a miss - use set/get if you need to cache null.
+## remember(c, key, ttl, producer) -> the cached value, computing it if absent.
+##
+## On a hit the cached value is returned and `producer` is never called. On a
+## miss `producer()` runs once, its result is stored with `ttl`, and returned.
+##
+## A cached null reads as a miss, so `producer` would run again - use `set` and
+## `get` directly if null is a value you need to cache.
+##
+## example:
+##   board = cache.remember(c, "board", 300, fn() http.get(url).body)
 export fn remember(c, key, ttl, producer) {
     hit = get(c, key)
     if hit != null { hit } else {
@@ -128,7 +152,7 @@ export fn remember(c, key, ttl, producer) {
     }
 }
 
-# delete(c, key) - remove from memory and disk.
+## delete(c, key) -> null. Removes `key` from both tiers.
 export fn delete(c, key) {
     k = string(key)
     cell_update(c.mem, fn(s) mem_del(s, k))
@@ -136,7 +160,8 @@ export fn delete(c, key) {
     null
 }
 
-# clear(c) - empty the memory tier and remove only this cache's disk files.
+## clear(c) -> null. Empties the memory tier and removes this cache's own disk
+## files, leaving anything else in the directory alone.
 export fn clear(c) {
     cell_set(c.mem, empty_mem())
     if c.dir != "" { store.clear_dir(c.dir) }
