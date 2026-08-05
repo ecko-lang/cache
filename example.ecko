@@ -24,7 +24,7 @@ expensive = fn() {
 result = main.remember(c, "big-sum", 3600, expensive)
 print("result: {result.total} ({result.note})")
 # The card's real use-case has the same shape (add the `net` capability):
-# 
+#
 # import std.http
 # import std.json
 # board = main.remember(c, "board", 300, || json.decode(http.get(url).body))
