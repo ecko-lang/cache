@@ -23,7 +23,7 @@ tier in your `ecko.json`:
   "dependencies": {
     "cache": {
       "path": "github.com/ecko-lang/cache",
-      "version": "v0.9.5",
+      "version": "0.37.0",
       "grant": ["fs:read", "fs:write"]
     }
   }
@@ -37,17 +37,17 @@ A memory-only cache (`open("")`) uses no filesystem and needs no grant.
 ```ecko
 import cache
 
-c = cache.open(".ecko-cache")            # disk-backed; survives across runs
+c = cache.open(".ecko-cache")  # disk-backed; survives across runs
 
 # Memoize an expensive fetch for 5 minutes. On the next run within the TTL,
 # this returns the cached value without calling the function again.
-board = cache.remember(c, "board", 300, || json.decode(http.get(url).body))
+board = cache.remember(c, "board", 300, fn() json.decode(http.get(url).body))
 
-cache.set(c, "greeting", "hello", 60)    # ttl seconds; 0 = never expires
-cache.get(c, "greeting")                 # "hello", or null on a miss/expiry
-cache.has(c, "greeting")                 # true (non-mutating check)
+cache.set(c, "greeting", "hello", 60)  # ttl seconds; 0 = never expires
+cache.get(c, "greeting")  # "hello", or null on a miss/expiry
+cache.has(c, "greeting")  # true (non-mutating check)
 cache.delete(c, "greeting")
-cache.clear(c)                           # drop everything this cache stored
+cache.clear(c)  # drop everything this cache stored
 ```
 
 ## API

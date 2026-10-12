@@ -7,7 +7,7 @@
 #
 #   c = cache.open(".ecko-cache")
 #   # memoize an expensive fetch for 5 minutes, across process runs
-#   board = cache.remember(c, "board", 300, || http.get(url).body)
+#   board = cache.remember(c, "board", 300, fn() http.get(url).body)
 #
 #   cache.set(c, "k", value, 60)   # ttl seconds; 0 = never expires
 #   cache.get(c, "k")              # value or null
